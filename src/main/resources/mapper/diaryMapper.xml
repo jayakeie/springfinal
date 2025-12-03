@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.springboot.springfinal.service.DiaryMapper">
+	<!-- //새로운 글 등록 메소드
+	void insertBoard(BoardDo bdo);
+	public void insertBoard(BoardDo bdo) {
+		String sql = "insert into board values(null,?,?,?)";		
+		jdbcTemplate.update(sql, bdo.getTitle(), bdo.getWriter(),bdo.getContent());
+	}
+	-->
+	<insert id="insertDiary" parameterType="DiaryDo">
+		insert into diary (user_id, title, content, category, diary_date) values (null, #{title}, #{content}, #{category}, #{date})
+	</insert>
+	
+</mapper>
