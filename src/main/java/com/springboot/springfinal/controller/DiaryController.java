@@ -1,6 +1,11 @@
 package com.springboot.springfinal.controller;
 
+import java.io.File;
 import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
+
+import jakarta.servlet.http.HttpSession;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Controller;
@@ -8,103 +13,206 @@ import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseBody;
+import org.springframework.web.multipart.MultipartFile;
 
 import com.springboot.springfinal.model.DiaryDao;
-import com.springboot.springfinal.model.DiaryDaoSpring;
 import com.springboot.springfinal.model.DiaryDo;
-import com.springboot.springfinal.service.DiaryServiceImpl;
+import com.springboot.springfinal.model.ImageDo;
 
 @Controller
 public class DiaryController {
-	@Autowired
-	DiaryServiceImpl dService; //mybatis
-	
-	@Autowired
-	private DiaryDaoSpring ddaoSpring; //spring jdbc
-	
-	@RequestMapping(value="/insertDiary.do", method=RequestMethod.GET)
-	public String insertDiary() {
-		System.out.println("Diary 작성");
-		
-		return "insertDiaryView";
-	}
-	
-	@RequestMapping(value="/insertDiaryProc.do")
-	public String insertDiaryProc(DiaryDo ddo, DiaryDao ddao) {
-		System.out.println("insertDiaryProc 실행");
-		System.out.println("title: "+ddo.getTitle());
-		System.out.println("Id: "+ddo.getUserId());
-		System.out.println("content: "+ddo.getContent());
-		
-		//디비에 입력된 데이터 저장
-		dService.insertDiary(ddo);
-		
-		return "redirect:getDiaryList.do";
-	}
-	
-	@RequestMapping(value="/getDiaryList.do")
-	public String getDiaryList(DiaryDo ddo, DiaryDao ddao, Model model) {
-		System.out.println("Diary 목록 가져오기");
-		
-		ArrayList<DiaryDo> dlist = ddaoSpring.getDiaryList();
-		model.addAttribute("dList", dlist);
-		
-		return "getDiaryListView";
-	}
-	
-	@RequestMapping(value="/modifyDiary.do")
-	public String modifyDiary(DiaryDo ddo, DiaryDao ddao, Model model) {
-		System.out.println("Diary 수정");
-		System.out.println("seq: "+ddo.getSeq());
-		
-//		DiaryDo Diary = ddao.getOneDiary(ddo.getSeq());
-		DiaryDo Diary = ddaoSpring.getOneDiary(ddo.getSeq());
-		
-		//mav.addObject("Diary", Diary);
-		//mav.setViewName("modifyDiaryView");
-		model.addAttribute("Diary", Diary);
-		
-		return "modifyDiaryView";
-	}
-	
-	@RequestMapping(value="/modifyDiaryProc.do")
-	//public ModelAndView modifyDiaryProc(DiaryDo ddo, DiaryDao ddao, ModelAndView mav) {
-	public String modifyDiaryProc(DiaryDo ddo, DiaryDao ddao, Model model) {
-		System.out.println("(Spring JDBC)modifyDiaryProc() 처리 시작!");
-		System.out.println("seq: "+ddo.getSeq()
-		+ ", title: "+ddo.getTitle()
-		+ ", Id: "+ddo.getUserId()
-		+", content: "+ddo.getContent());
-		
-//		ddao.updateDiary(ddo);
-		ddaoSpring.updateDiary(ddo);
-		//수정된 데이터를 반영하여 전체 데이터를 읽어와 보여 주기 위해, getDiaryList.do 요청함
-		//mav.setViewName("redirect:getDiaryList.do");
-		
-		return "redirect:getDiaryList.do";
-	}
-	
-	@RequestMapping(value="/deleteDiary.do")
-	public String deleteDiary(DiaryDo ddo, DiaryDao ddao) {
-		System.out.println("(Spring JDBC) deleteDiary() 처리 시작!");
-//		ddao.deleteDiary(ddo.getSeq());
-		ddaoSpring.deleteDiary(ddo.getSeq());
-		
-		return "redirect:getDiaryList.do";
-	}
-	
-	@RequestMapping(value="/searchDiaryList.do")
-	public String searchDiaryList(@RequestParam(value="searchCon") String searchCon,
-								@RequestParam(value="searchKey") String searchKey,
-								DiaryDao ddao, Model model) {
-		System.out.println("(Spring JDBC) searchDiaryList() 처리 시작!");
-		System.out.println("searchCon: "+searchCon + ", searchKey: "+searchKey);
-		
-		//Dao 이용하여 DB에서 해당 데이터 검색해 결과를 가져오기
-		ArrayList<DiaryDo> dList = ddaoSpring.searchDiaryList(searchCon, searchKey);
-		
-		model.addAttribute("dList", dList);
-		
-		return "getDiaryListView";
-	}
+    
+    @Autowired
+    private DiaryDao diaryDao;
+    
+    //업로드한 이미지 파일 저장 경로
+    private static final String UPLOAD_DIR = System.getProperty("user.home") + "/diary_uploads/";
+
+    //세션 체크 메소드 (로그인)
+    private boolean isLogin(HttpSession session) {
+        return session.getAttribute("userId") != null;
+    }
+
+    //목록 조회
+    @RequestMapping(value = "/getDiaryList.do")
+    public String getDiaryList(Model model, HttpSession session) {
+        String userId = (String) session.getAttribute("userId");
+        
+        if (userId != null) {
+            List<DiaryDo> dlist = diaryDao.getDiaryList(userId);
+            model.addAttribute("dList", dlist);
+        } else {
+            model.addAttribute("dList", new ArrayList<DiaryDo>());
+        }
+        
+        return "getDiaryListView";
+    }
+
+    //작성 페이지
+    @RequestMapping(value = "/insertDiary.do", method = RequestMethod.GET)
+    public String insertDiary(HttpSession session) {
+        if (!isLogin(session)) {
+            return "redirect:login.do";
+        }
+        return "insertDiaryView";
+    }
+    
+    //작성 처리 (파일 저장)
+    @RequestMapping(value = "/insertDiaryProc.do", method = RequestMethod.POST)
+    public String insertDiaryProc(DiaryDo ddo, 
+                                  @RequestParam("uploadFiles") List<MultipartFile> files,
+                                  HttpSession session) {
+        
+        if (!isLogin(session)) {
+            return "redirect:login.do";
+        }
+        
+        String userId = (String) session.getAttribute("userId");
+        ddo.setUserId(userId);
+        
+        //일기 저장 후 ID 반환
+        int diaryId = diaryDao.insertDiary(ddo);
+        
+        //이미지 파일 저장
+        saveFiles(files, diaryId);
+        
+        return "redirect:getDiaryList.do";
+    }
+    
+    //상세 정보 (AJAX로 비동기통신)
+    @RequestMapping(value = "/getDiaryDetail.do", method = RequestMethod.POST)
+    @ResponseBody 
+    public DiaryDo getDiaryDetail(@RequestParam("diaryId") int diaryId) {
+        return diaryDao.getOneDiary(diaryId);
+    }
+
+    //수정 페이지
+    @RequestMapping(value = "/modifyDiary.do")
+    public String modifyDiary(@RequestParam("diaryId") int diaryId, Model model, HttpSession session) {
+        if (!isLogin(session)) {
+            return "redirect:login.do";
+        }
+        
+        DiaryDo diary = diaryDao.getOneDiary(diaryId);
+        List<ImageDo> imageList = diaryDao.getDiaryImages(diaryId);
+        
+        model.addAttribute("Diary", diary);
+        model.addAttribute("imageList", imageList);
+        
+        return "modifyDiaryView";
+    }
+
+    //수정 처리 (파일 추가/삭제)
+    @RequestMapping(value = "/modifyDiaryProc.do", method = RequestMethod.POST)
+    public String modifyDiaryProc(DiaryDo ddo, 
+                                  @RequestParam(value = "uploadFiles", required = false) List<MultipartFile> files,
+                                  @RequestParam(value = "deleteImages", required = false) List<String> deleteImages,
+                                  HttpSession session) {
+        
+        if (!isLogin(session)) {
+            return "redirect:login.do";
+        }
+        
+        diaryDao.updateDiary(ddo);
+        
+        //이미지 삭제 (DB + 실제 파일)
+        if (deleteImages != null && !deleteImages.isEmpty()) {
+            for (String storedName : deleteImages) {
+                //DB 삭제
+                diaryDao.deleteDiaryImageByStoredName(storedName); 
+                
+                //실제 파일 삭제
+                File file = new File(UPLOAD_DIR + storedName);
+                if (file.exists()) {
+                    file.delete(); 
+                }
+            }
+        }
+        
+        //추가된 이미지 저장
+        saveFiles(files, ddo.getDiaryId());
+        
+        return "redirect:getDiaryList.do";
+    }
+
+    //삭제 처리 (로컬 파일 삭제)
+    @RequestMapping(value = "/deleteDiary.do")
+    public String deleteDiary(@RequestParam("diaryId") int diaryId, HttpSession session) {
+        if (!isLogin(session)) {
+            return "redirect:login.do";
+        }
+        
+        //삭제하기 전 일기의 이미지 목록 조회
+        List<ImageDo> imagesToDelete = diaryDao.getDiaryImages(diaryId);
+        
+        //실제 파일 삭제
+        if (imagesToDelete != null) {
+            for (ImageDo img : imagesToDelete) {
+                File file = new File(UPLOAD_DIR + img.getStoredName());
+                
+                if (file.exists()) {
+                    if (file.delete()) {
+                        System.out.println("파일 삭제 성공: " + img.getStoredName());
+                    }
+                }
+            }
+        }
+        
+        //일기 삭제
+        diaryDao.deleteDiary(diaryId);
+        
+        return "redirect:getDiaryList.do";
+    }
+
+    //검색
+    @RequestMapping(value = "/searchDiaryList.do")
+    public String searchDiaryList(@RequestParam(value = "searchCon") String searchCon,
+                                  @RequestParam(value = "searchKey") String searchKey,
+                                  Model model, 
+                                  HttpSession session) {
+        
+        if (!isLogin(session)) {
+            return "redirect:login.do";
+        }
+        
+        String userId = (String) session.getAttribute("userId");
+        List<DiaryDo> dList = diaryDao.searchDiaryList(userId, searchCon, searchKey);
+        
+        model.addAttribute("dList", dList);
+        model.addAttribute("searchCon", searchCon);
+        model.addAttribute("searchKey", searchKey);
+        
+        return "getDiaryListView";
+    }
+
+    //파일 저장
+    private void saveFiles(List<MultipartFile> files, int diaryId) {
+        if (files != null && !files.isEmpty()) {
+            
+            File uploadDir = new File(UPLOAD_DIR);
+            if (!uploadDir.exists()) {
+                uploadDir.mkdirs();
+            }
+
+            for (MultipartFile file : files) {
+                if (file.isEmpty()) continue;
+                
+                try {
+                    String originalName = file.getOriginalFilename();
+                    String storedName = UUID.randomUUID().toString() + "_" + originalName;
+                    
+                    //파일 이동
+                    file.transferTo(new File(UPLOAD_DIR + storedName));
+                    
+                    //DB 저장
+                    ImageDo imageDo = new ImageDo(diaryId, originalName, storedName);
+                    diaryDao.insertDiaryImage(imageDo);
+                    
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+    }
 }

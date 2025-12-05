@@ -1,302 +1,176 @@
 package com.springboot.springfinal.model;
 
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.util.ArrayList;
+import java.sql.Statement;
+import java.util.List;
 
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.PreparedStatementCreator;
+import org.springframework.jdbc.core.RowMapper;
+import org.springframework.jdbc.support.GeneratedKeyHolder;
+import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Repository;
 
-@Repository("diaryDao")
+@Repository
 public class DiaryDao {
-	
-	String id= "root";
-	String password= "111111";
-	String url = "jdbc:mysql://localhost:3306/springfinal?characterEncoding=utf-8";
-	
-	//jdbc에 필요한 객체를 위한 변수 전역변수 설정하여 사용함 
-	Connection conn = null;
-	PreparedStatement pstmt = null;
-	ResultSet rs = null;
-	
-	public Connection getConn() {
-		try {
-			//1.드라이버 로딩	
-			Class.forName("com.mysql.jdbc.Driver");
-			System.out.println("드라이버 로딩 완료... ");
-			
-			//2. 디비 서버에 연결(url, id, password)
-			return DriverManager.getConnection(url, id, password);
-			
-		} catch (Exception e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}		
-		//디비연결 에러시에 null 리턴...
-		return null;
-	}
-	
-	public void closeConn(Connection conn, PreparedStatement pstmt, ResultSet rs) {
-		if(pstmt != null) {
-			try {
-				pstmt.close();
-			} catch (SQLException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
-			}
-			finally {
-				pstmt = null;
-			}
-		}
-		if(rs != null) {
-			try {
-				rs.close();
-			} catch (SQLException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
-			}
-			finally {
-				rs = null;
-			}
-		}
-		if(conn != null) {
-			try {
-				conn.close();
-			} catch (SQLException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
-			}
-			finally {
-				conn = null;
-			}
-		}
-		
-		
-		
-		
-	}
-		
-	//DiaryDo에 저장된 데이터를 디비에 저장하는 메소드
-	public void insertDiary(DiaryDo bdo) {
-		System.out.println("insertDiary() 처리 시작 ");		
-		//1. 디비 연결
-		conn = getConn();	
-		
-		try {
-			//2. sql문 완성 (pstmt 객체)
-			String sql = "insert into Diary values(null,?,?,?)";
-			pstmt = conn.prepareStatement(sql);
-			//? 채우기
-			pstmt.setString(1, bdo.getTitle());
-			pstmt.setString(2, bdo.getUserId());
-			pstmt.setString(3, bdo.getContent());
-			
-			//3. sql문 실행 : 디비 테이블의 변화가 있기때문에, executeUpdate() 이용
-			pstmt.executeUpdate(); 
-			
-			//4. 디비연결해제
-			closeConn(conn, pstmt, rs);
-			
-		} catch (SQLException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
-		
-	}	
+    
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
+    //insert (생성된 PK 반환)
+    public int insertDiary(DiaryDo ddo) {
+        String sql = "INSERT INTO diary (user_id, name, title, content, category, diary_date) "
+                   + "VALUES (?, ?, ?, ?, ?, ?)";
+        
+        KeyHolder keyHolder = new GeneratedKeyHolder();
 
-	//4. getDiaryList() : 디비로 부터 전체 데이터를 가져오는 메소드 
-	public ArrayList<DiaryDo> getDiaryList(){
-		System.out.println("getDiaryList() 처리 시작 !! ");
-		//리턴 변수 설정...
-		ArrayList<DiaryDo> bList = new ArrayList<>();
-		
-		//1. jdbc: 디비 연결하기 
-		conn = getConn();
-				
-		try {
-			//2. jdbc: sql문 완성하기 
-			String sql = "select * from Diary";
-			pstmt  = conn.prepareStatement(sql);
-			
-			//3. jdbc: sql 문 실행 
-			//디비 테이블에 변화가 없기때문에, executeQuery() 이용
-			rs = pstmt.executeQuery(); 
-			
-			//4. jdbc: ** sql문 실행결과 처리 **
-			while(rs.next()) { //테이블 데이터가 있다면, 
-				DiaryDo bdo = new DiaryDo(); //DO 객체 생성하여, 멤버변수에 테이블 데이터 저장 
-				bdo.setSeq( rs.getInt(1));   
-				bdo.setTitle(rs.getString(2));
-				bdo.setUserId(rs.getString(3));
-				bdo.setContent(rs.getString(4));
-				
-				bList.add(bdo); //배열에 DO 저장...
-			}
-			closeConn(conn, pstmt, rs);
-			System.out.println("getDiaryList() 처리 완료 !!");
-			
-		} catch (SQLException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
-		
+        jdbcTemplate.update(new PreparedStatementCreator() {
+            @Override
+            public PreparedStatement createPreparedStatement(Connection con) throws SQLException {
+                PreparedStatement pstmt = con.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS);
+                pstmt.setString(1, ddo.getUserId());
+                pstmt.setString(2, ddo.getName());
+                pstmt.setString(3, ddo.getTitle());
+                pstmt.setString(4, ddo.getContent());
+                pstmt.setString(5, ddo.getCategory());
+                pstmt.setString(6, ddo.getDate());
+                return pstmt;
+            }
+        }, keyHolder);
 
-	
-	
-		return bList;
-	}
+        return keyHolder.getKey().intValue(); 
+    }
 
-	//5. updateDiary() : 디비의 특정(seq) 데이터를 수정하는 메소드
-	public void updateDiary(DiaryDo bdo) {
-		System.out.println("updateDiary() 처리 시작 !! ");
-		
-		//1. jdbc : 디비 연결 
-		conn = getConn();	
-		
-		try {
-			//2. jdbc : sql문 완성 
-			String sql = "update Diary set title=?, content=? where seq=?";
-			pstmt = conn.prepareStatement(sql);
-			pstmt.setString(1, bdo.getTitle()); // 첫번째 ?에 값 설정
-			pstmt.setString(2, bdo.getContent()); // 두번째 ?에 값 설정
-			pstmt.setInt(3, bdo.getSeq()); // 세번째 ?에 값 설정
-			
-			
-			//3. jdbc : sql문 실행
-			pstmt.executeUpdate();//테이블의 변화가 있기 때문에, executeUpdate() 이용
-			
-			//4. jdbc : 연결종료
-			closeConn(conn, pstmt, rs);
-			
-			System.out.println("updateDiary() 처리 완료 !!");
-			
-		} catch (SQLException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}		
-		
-	}
+    //insert image
+    public void insertDiaryImage(ImageDo imageDo) {
+        String sql = "INSERT INTO images (diary_id, original_name, stored_name) VALUES (?, ?, ?)";
+        
+        jdbcTemplate.update(sql, 
+                imageDo.getDiaryId(), 
+                imageDo.getOriginalName(), 
+                imageDo.getStoredName());
+    }
 
-	//6. deleteDiary() : 디비의 특정(seq) 데이터를 삭제하는 메소드
-	public void deleteDiary(int seq) {
-		System.out.println("deleteDiary() 처리 시작 !!");
-		
-		//1. jdbc : 디비 연결 
-		conn = getConn();	
-		
-		try {
-			//2. jdbc : sql문 완성 
-			String sql = "delete from Diary where seq=?";
-			pstmt = conn.prepareStatement(sql);
-			pstmt.setInt(1, seq); // 첫번째 ?에 값 설정
-			
-			//3. jdbc : sql문 실행
-			pstmt.executeUpdate();//테이블의 변화가 있기 때문에, executeUpdate() 이용
-			
-			//4. jdbc : 연결종료
-			closeConn(conn, pstmt, rs);
-			
-			System.out.println("deleteDiary() 처리 완료 !!");
-			
-		} catch (SQLException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
-		
-		
-		
-	}
+    //select all (이미지 여러 장을 콤마로 연결해서 가져옴)
+    public List<DiaryDo> getDiaryList(String userId){
+        String sql = "SELECT d.*, " 
+                   + "       (SELECT GROUP_CONCAT(stored_name SEPARATOR ',') FROM images WHERE diary_id = d.diary_id) as images " 
+                   + "FROM diary d "
+                   + "WHERE user_id = ? "
+                   + "ORDER BY diary_date DESC, diary_id DESC";
+        
+        return jdbcTemplate.query(sql, new Object[]{userId}, new DiaryRowMapper());
+    }
 
-	//7. getOneDiary() : 디비로 부터 특정(seq) 데이터를 가져오는 메소드 
-	public DiaryDo getOneDiary(int seq) {
-		System.out.println("getOneDiary() 처리 시작 !!");
-		//하나의 데이터를 가져와서 리턴할 DiaryDo 객체 생성.. 
-		DiaryDo bdo = new DiaryDo();
-		
-		//1. jdbc: 디비 연결하기 
-		conn = getConn();
-				
-		try {
-			//2. jdbc: sql문 완성하기 
-			String sql = "select * from  Diary where seq=?";			
-			pstmt  = conn.prepareStatement(sql);
-			pstmt.setInt(1, seq);
-						
-			//3. jdbc: sql 문 실행 
-			//디비 테이블에 변화가 없기때문에, executeQuery() 이용
-			rs = pstmt.executeQuery(); 
-			
-			//4. jdbc: ** sql문 실행결과 처리 **
-			while(rs.next()) { //테이블 데이터가 있다면,				 
-				bdo.setSeq( rs.getInt(1));   
-				bdo.setTitle(rs.getString(2));
-				bdo.setUserId(rs.getString(3));
-				bdo.setContent(rs.getString(4));
-			}
-			closeConn(conn, pstmt, rs);
-			System.out.println("getOneDiary() 처리 완료 !!");
-			
-		} catch (SQLException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
-		
-		return bdo;
-	}
-	
-	//8. searchDiaryList() : 디비로 부터 전체 데이터를 가져오는 메소드 
-	public ArrayList<DiaryDo> searchDiaryList(String searchCon, String searchKey){
-		System.out.println("searchDiaryList() 처리 시작 !! ");
-		
-		//리턴 변수 설정...
-		ArrayList<DiaryDo> bList = new ArrayList<>();
-		
-		//1. jdbc: 디비 연결하기 
-		conn = getConn();
-				
-		try {
-			//2. jdbc: sql문 완성하기 
-			//String sql = "select * from Diary";
-			String sql = "";
-			
-			if (searchCon.equals("title")) {
-				sql="select * from Diary where title=? order by seq desc";
-			} else if (searchCon.equals("content")) {
-				sql="select * from Diary where content=? order by seq desc";
-			} else if (searchCon.equals("writer")) {
-				sql="select * from Diary where writer=? order by seq desc";
-			} else {
-				return null;
-			}
-			
-			pstmt  = conn.prepareStatement(sql);
-			pstmt.setString(1, searchKey);
-			
-			//3. jdbc: sql 문 실행 
-			//디비 테이블에 변화가 없기때문에, executeQuery() 이용
-			rs = pstmt.executeQuery(); 
-			
-			//4. jdbc: ** sql문 실행결과 처리 **
-			while(rs.next()) { //테이블 데이터가 있다면, 
-				DiaryDo bdo = new DiaryDo(); //DO 객체 생성하여, 멤버변수에 테이블 데이터 저장 
-				bdo.setSeq( rs.getInt(1));   
-				bdo.setTitle(rs.getString(2));
-				bdo.setUserId(rs.getString(3));
-				bdo.setContent(rs.getString(4));
-				
-				bList.add(bdo); //배열에 DO 저장...
-			}
-			closeConn(conn, pstmt, rs);
-			System.out.println("getDiaryList() 처리 완료 !!");
-			
-		} catch (SQLException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
-		return bList;
-	}
+    //modify
+    public void updateDiary(DiaryDo ddo) {
+        String sql = "UPDATE diary SET title=?, content=?, category=?, name=? WHERE diary_id=?";
+        
+        jdbcTemplate.update(sql, 
+                ddo.getTitle(), 
+                ddo.getContent(), 
+                ddo.getCategory(), 
+                ddo.getName(), 
+                ddo.getDiaryId());
+    }
 
+    //일기별 이미지 목록 (수정 화면용)
+    public List<ImageDo> getDiaryImages(int diaryId) {
+        String sql = "SELECT * FROM images WHERE diary_id = ?";
+        
+        return jdbcTemplate.query(sql, new Object[]{diaryId}, new RowMapper<ImageDo>() {
+            @Override
+            public ImageDo mapRow(ResultSet rs, int rowNum) throws SQLException {
+                return new ImageDo(
+                    rs.getInt("diary_id"),
+                    rs.getString("original_name"),
+                    rs.getString("stored_name")
+                );
+            }
+        });
+    }
+
+    //저장된 이름으로 이미지 삭제
+    public void deleteDiaryImageByStoredName(String storedName) {
+        String sql = "DELETE FROM images WHERE stored_name = ?";
+        jdbcTemplate.update(sql, storedName);
+    }
+
+    //삭제
+    public void deleteDiary(int diaryId) {
+        String sql = "DELETE FROM diary WHERE diary_id=?";
+        jdbcTemplate.update(sql, diaryId);
+    }
+
+    //select one (상세 보기용)
+    public DiaryDo getOneDiary(int diaryId) {
+        String sql = "SELECT d.*, " 
+                   + "       (SELECT GROUP_CONCAT(stored_name SEPARATOR ',') FROM images WHERE diary_id = d.diary_id) as images " 
+                   + "FROM diary d "
+                   + "WHERE diary_id=?";
+        try {
+            return jdbcTemplate.queryForObject(sql, new Object[]{diaryId}, new DiaryRowMapper());
+        } catch (Exception e) { 
+            return null; 
+        }
+    }
+    
+    //검색
+    public List<DiaryDo> searchDiaryList(String userId, String searchCon, String searchKey){
+        String sqlBase = "SELECT d.*, "
+                       + "       (SELECT GROUP_CONCAT(stored_name SEPARATOR ',') FROM images WHERE diary_id = d.diary_id) as images "
+                       + "FROM diary d "
+                       + "WHERE user_id = ? ";
+        
+        String likeKey = "%" + searchKey + "%";
+
+        if (searchCon.equals("title")) {
+            String sql = sqlBase + "AND title LIKE ? ORDER BY diary_date DESC";
+            return jdbcTemplate.query(sql, new Object[]{userId, likeKey}, new DiaryRowMapper());
+            
+        } else if (searchCon.equals("content")) {
+            String sql = sqlBase + "AND content LIKE ? ORDER BY diary_date DESC";
+            return jdbcTemplate.query(sql, new Object[]{userId, likeKey}, new DiaryRowMapper());
+            
+        } else if (searchCon.equals("name")) {
+            String sql = sqlBase + "AND name LIKE ? ORDER BY diary_date DESC";
+            return jdbcTemplate.query(sql, new Object[]{userId, likeKey}, new DiaryRowMapper());
+        }
+        
+        //조건이 맞지 않을 경우 전체 목록
+        return jdbcTemplate.query(sqlBase + "ORDER BY diary_date DESC", new Object[]{userId}, new DiaryRowMapper());
+    }
+}
+
+class DiaryRowMapper implements RowMapper<DiaryDo> {
+    
+    @Override
+    public DiaryDo mapRow(ResultSet rs, int rowNum) throws SQLException {
+        DiaryDo ddo = new DiaryDo();
+        
+        ddo.setDiaryId(rs.getInt("diary_id"));
+        ddo.setUserId(rs.getString("user_id"));
+        ddo.setName(rs.getString("name"));
+        ddo.setTitle(rs.getString("title"));
+        ddo.setContent(rs.getString("content"));
+        ddo.setCategory(rs.getString("category"));
+        
+        java.sql.Date date = rs.getDate("diary_date");
+        if (date != null) {
+            ddo.setDate(date.toString());
+        }
+        
+        try {
+            // images 컬럼 매핑 (GROUP_CONCAT 결과)
+            ddo.setImages(rs.getString("images"));
+        } catch (SQLException e) {
+            // images 컬럼이 없는 경우 무시
+        }
+        
+        return ddo;
+    }
 }
